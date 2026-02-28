@@ -1,17 +1,25 @@
 # Demo: Run 2 Peers (Admin + Joiner)
 
-This demo proves the base networking works:
-- one **admin** peer creates the subnet/app
-- one **joiner** peer joins using the admin writer key (bootstrap)
+This demo proves that your Intercom fork runs correctly and that peers can connect to the same subnet.
 
-> Important: Intercom must be run via **Pear** (not plain Node).
+You will:
+
+- start one admin peer
+- copy its writer key
+- start one joiner peer
+
+This is the foundation for fractional asset ownership later.
 
 ---
 
-## 0) Requirements
+# Requirements
 
-- Node.js >= 22
-- Pear runtime:
-  ```bash
-  npm install -g pear
-  pear -v
+You must do this later on your local computer, not on GitHub.
+
+Install Node.js 22 or newer.
+
+Install Pear runtime:
+
+```bash
+npm install -g pear
+pear -v
