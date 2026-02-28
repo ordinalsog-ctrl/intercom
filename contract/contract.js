@@ -1,3 +1,20 @@
+/**
+ * Fractional Trading Card Ownership Contract (MVP)
+ *
+ * IMPORTANT:
+ * For real TXs, the framework expects the contract to RETURN state operations
+ * (e.g. put/del) that will be applied to the subnet state (base.view),
+ * so that `/get --key ...` can read them.
+ *
+ * Therefore execute() returns:
+ * - an array of ops for writes: [{ type:'put', key, value }]
+ * - a plain object for reads
+ *
+ * Also required by SimStorage:
+ * - emptyPromise()
+ * - isReservedKey()
+ */
+
 const STATE_KEY = 'fo_state_v1';
 
 function asInt(v) {
@@ -5,23 +22,19 @@ function asInt(v) {
   if (!Number.isFinite(n) || !Number.isInteger(n)) throw new Error('INVALID_INT');
   return n;
 }
-function clone(obj) { return JSON.parse(JSON.stringify(obj)); }
+
+function clone(obj) {
+  return JSON.parse(JSON.stringify(obj));
+}
 
 export default class FractionalOwnershipContract {
-  // REQUIRED by SimStorage
   emptyPromise() { return Promise.resolve(); }
-
-  // MVP: do not reserve keys (avoid SimStorage conflicts)
-  isReservedKey(_key) { return false; }
+  isReservedKey(_key) { return false; } // MVP
 
   async _getState(storage) {
     const row = await storage.get(STATE_KEY);
     if (!row || row.value == null) return { assets: {}, holders: {} };
     return clone(row.value);
-  }
-
-  async _setState(storage, state) {
-    await storage.put(STATE_KEY, state);
   }
 
   _ensureAsset(state, assetId) {
@@ -39,8 +52,10 @@ export default class FractionalOwnershipContract {
 
     const type = dispatch.type;
     const args = dispatch.value ?? {};
+
     const state = await this._getState(storage);
 
+    // ---------- Writes (return ops) ----------
     if (type === 'create_asset') {
       const assetId = String(args.assetId || '').trim();
       if (!assetId) throw new Error('ASSET_ID_REQUIRED');
@@ -56,8 +71,7 @@ export default class FractionalOwnershipContract {
       state.assets[assetId] = { assetId, totalShares, createdAt: Date.now() };
       state.holders[assetId] = { [initialOwner]: totalShares };
 
-      await this._setState(storage, state);
-      return { ok: true, assetId, totalShares, initialOwner };
+      return [{ type: 'put', key: STATE_KEY, value: state }];
     }
 
     if (type === 'transfer_shares') {
@@ -82,10 +96,10 @@ export default class FractionalOwnershipContract {
       holders[to] = asInt(holders[to] || 0) + shares;
       if (holders[fromAddr] === 0) delete holders[fromAddr];
 
-      await this._setState(storage, state);
-      return { ok: true, assetId, from: fromAddr, to, shares };
+      return [{ type: 'put', key: STATE_KEY, value: state }];
     }
 
+    // ---------- Reads (return plain objects) ----------
     if (type === 'read_asset') {
       const assetId = String(args.assetId || '').trim();
       if (!assetId) throw new Error('ASSET_ID_REQUIRED');
