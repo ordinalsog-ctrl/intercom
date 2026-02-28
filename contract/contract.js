@@ -1,16 +1,3 @@
-/**
- * Fractional Trading Card Ownership Contract (MVP)
- *
- * trac-peer expects peer.contract.instance.execute(op, storage)
- * and (for simulation) peer.contract.instance.isReservedKey(key).
- *
- * We store all contract state under a single deterministic storage key:
- *   fo_state_v1
- *
- * Dispatch payload is:
- *   op.value.dispatch -> { type, value }
- */
-
 const STATE_KEY = 'fo_state_v1';
 
 function asInt(v) {
@@ -18,19 +5,14 @@ function asInt(v) {
   if (!Number.isFinite(n) || !Number.isInteger(n)) throw new Error('INVALID_INT');
   return n;
 }
-
-function clone(obj) {
-  return JSON.parse(JSON.stringify(obj));
-}
+function clone(obj) { return JSON.parse(JSON.stringify(obj)); }
 
 export default class FractionalOwnershipContract {
-  // Required by SimStorage in trac-peer:
-  // Return true only for keys you want to forbid writing to.
-  isReservedKey(key) {
-    // We only write to STATE_KEY, and we allow that.
-    // Keep this strict to avoid accidental overwrites of system keys.
-    return key !== STATE_KEY;
-  }
+  // REQUIRED by SimStorage
+  emptyPromise() { return Promise.resolve(); }
+
+  // MVP: do not reserve keys (avoid SimStorage conflicts)
+  isReservedKey(_key) { return false; }
 
   async _getState(storage) {
     const row = await storage.get(STATE_KEY);
@@ -57,7 +39,6 @@ export default class FractionalOwnershipContract {
 
     const type = dispatch.type;
     const args = dispatch.value ?? {};
-
     const state = await this._getState(storage);
 
     if (type === 'create_asset') {
