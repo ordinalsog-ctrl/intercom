@@ -1,20 +1,14 @@
 /**
  * Fractional Trading Card Ownership Contract (MVP)
  *
- * This contract is implemented as a class with an execute(op, storage) method
- * because trac-peer expects peer.contract.instance.execute(...) to exist.
+ * trac-peer expects peer.contract.instance.execute(op, storage)
+ * and (for simulation) peer.contract.instance.isReservedKey(key).
  *
  * We store all contract state under a single deterministic storage key:
  *   fo_state_v1
  *
- * Dispatch payload is provided via:
- *   op.value.dispatch  -> { type, value }
- *
- * Supported dispatch types:
- * - create_asset
- * - transfer_shares
- * - read_asset
- * - read_holders
+ * Dispatch payload is:
+ *   op.value.dispatch -> { type, value }
  */
 
 const STATE_KEY = 'fo_state_v1';
@@ -30,12 +24,17 @@ function clone(obj) {
 }
 
 export default class FractionalOwnershipContract {
+  // Required by SimStorage in trac-peer:
+  // Return true only for keys you want to forbid writing to.
+  isReservedKey(key) {
+    // We only write to STATE_KEY, and we allow that.
+    // Keep this strict to avoid accidental overwrites of system keys.
+    return key !== STATE_KEY;
+  }
+
   async _getState(storage) {
     const row = await storage.get(STATE_KEY);
-    if (!row || row.value == null) {
-      return { assets: {}, holders: {} };
-    }
-    // storage value can be stored directly as object
+    if (!row || row.value == null) return { assets: {}, holders: {} };
     return clone(row.value);
   }
 
@@ -51,7 +50,6 @@ export default class FractionalOwnershipContract {
   }
 
   async execute(op, storage) {
-    // We only care about tx operations (simulation and real tx both call execute)
     if (!op || op.type !== 'tx') return null;
 
     const dispatch = op?.value?.dispatch;
@@ -60,10 +58,8 @@ export default class FractionalOwnershipContract {
     const type = dispatch.type;
     const args = dispatch.value ?? {};
 
-    // Load state
     const state = await this._getState(storage);
 
-    // ---- Commands ----
     if (type === 'create_asset') {
       const assetId = String(args.assetId || '').trim();
       if (!assetId) throw new Error('ASSET_ID_REQUIRED');
@@ -71,21 +67,13 @@ export default class FractionalOwnershipContract {
       const totalShares = asInt(args.totalShares);
       if (totalShares <= 0) throw new Error('TOTAL_SHARES_INVALID');
 
-      // initialOwner is optional; fallback to tx initiator public key (ipk)
       const initialOwner = String(args.initialOwner || op?.value?.ipk || '').trim();
       if (!initialOwner) throw new Error('INITIAL_OWNER_REQUIRED');
 
       if (state.assets[assetId]) throw new Error('ASSET_ALREADY_EXISTS');
 
-      state.assets[assetId] = {
-        assetId,
-        totalShares,
-        createdAt: Date.now()
-      };
-
-      state.holders[assetId] = {
-        [initialOwner]: totalShares
-      };
+      state.assets[assetId] = { assetId, totalShares, createdAt: Date.now() };
+      state.holders[assetId] = { [initialOwner]: totalShares };
 
       await this._setState(storage, state);
       return { ok: true, assetId, totalShares, initialOwner };
@@ -111,14 +99,12 @@ export default class FractionalOwnershipContract {
 
       holders[fromAddr] = fromBal - shares;
       holders[to] = asInt(holders[to] || 0) + shares;
-
       if (holders[fromAddr] === 0) delete holders[fromAddr];
 
       await this._setState(storage, state);
       return { ok: true, assetId, from: fromAddr, to, shares };
     }
 
-    // ---- Reads ----
     if (type === 'read_asset') {
       const assetId = String(args.assetId || '').trim();
       if (!assetId) throw new Error('ASSET_ID_REQUIRED');
@@ -131,7 +117,6 @@ export default class FractionalOwnershipContract {
       return { holders: state.holders[assetId] || {} };
     }
 
-    // Unknown command: no-op
     return { ok: false, error: 'UNKNOWN_COMMAND', type };
   }
 }
